@@ -5,18 +5,20 @@ genuinely new, let a small model normalize the messy French/Arabic/English
 descriptions, score each posting against your own profile, and ping you on
 **Telegram** only for the ones worth opening.
 
-Single user, single source, no hardware to own. The collector runs as a
-scheduled **Cloud Run Job** — not a Raspberry Pi, not a VPS you SSH into at
-2am. See `architecture.md` for the full reasoning; this file is the
+Single user, single source, no hardware to own and no billing account
+either. The collector runs as a scheduled **GitHub Actions workflow** — not
+a Raspberry Pi, not a VPS you SSH into at 2am, not a paid GCP compute
+product. See `architecture.md` for the full reasoning (including why Cloud
+Run Jobs didn't work out — Blaze-plan-only, full stop); this file is the
 day-to-day version.
 
 ```
         ┌───────────────────────────────────────────────┐
-        │ Cloud Scheduler — cron, jittered, ≥15 min       │
+        │ GitHub Actions schedule — cron, jittered, ≥15 min│
         └────────────────────────┬────────────────────────┘
-                                 │ invokes
+                                 │ triggers
         ┌────────────────────────▼────────────────────────┐
-        │ Cloud Run Job (ephemeral, one execution/cycle)    │
+        │ .github/workflows/collect.yml (ephemeral runner)  │
         │                                                   │
         │  PHASE 1 · sweep list pages     ids only          │
         │    robots check → throttle → render → /job/<id>   │
@@ -100,9 +102,11 @@ npm run probe                    # ← do this before touching any selector
 npm run once                     # one full cycle, verbose, against the emulator
 ```
 
-Going to production means deploying the Cloud Run Job + Cloud Scheduler
-trigger (`npm run deploy:job`) instead of leaving a process running — see
-`architecture.md` §1 for why there's no `npm start`-forever command here.
+Going to production means committing `.github/workflows/collect.yml` and
+setting the repo secrets (Anthropic key, Telegram token, Firebase service
+account) — deployment *is* `git push`, there's no separate deploy step and
+no `npm start`-forever command. See `architecture.md` §1 for the full
+reasoning, including why Cloud Run Jobs didn't work out.
 
 ### The probe step is not optional
 

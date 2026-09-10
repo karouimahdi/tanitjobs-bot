@@ -3,3 +3,12 @@ dist/
 .env
 raw/*
 !raw/.gitkeep
+.claude/
+
+# Firebase CLI local artifacts and secrets — never commit a service account key
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+secrets/
+*.serviceaccount.json

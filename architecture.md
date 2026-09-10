@@ -1,6 +1,6 @@
 # Architecture
 
-TanitJobs → Cloud Run Job → Firestore → Anthropic → Telegram.
+TanitJobs → GitHub Actions → Firestore → Anthropic → Telegram.
 
 The whole system is a change detector wearing a job-board costume. Everything
 interesting is in *how it decides something is new* and *how it is allowed to
@@ -16,27 +16,32 @@ answer — an always-on box you own — is itself an ongoing maintenance cost
 (patching, disk space, "why did the process die at 3am") for a single-user
 tool. Given the choice, don't own hardware for this.
 
-The resolution: run the collector as a **Cloud Run Job**, not a Cloud Run
-*Service* and not a long-lived process. A Job runs to completion and exits —
-shaped like a cron script, not a server — which sidesteps the reason Cloud Run
-*Services* are a bad fit here (an always-listening container burning cost,
-with no natural place to end a Playwright session cleanly):
+The resolution went through two revisions. The first used a **Cloud Run
+Job** on a Cloud Scheduler trigger — that solved the hardware problem but
+turned out to have a harder gate behind it: Cloud Run, Cloud Scheduler, and
+Artifact Registry are all exclusive to GCP's Blaze (pay-as-you-go) plan.
+`gcloud services enable` fails on them with `FAILED_PRECONDITION` the moment
+no billing account is linked — not a soft limit, not something that degrades
+gracefully, a hard block regardless of how little you'd actually use. Given
+the choice to stay on Firebase's free Spark plan (Firestore included), the
+collector's *compute* moved off GCP entirely. Firestore itself stays on
+Firebase/GCP throughout — Spark covers it completely at this volume; only
+the scheduler and the machine running Playwright moved:
 
 ```
    ┌──────────────────────────────────────────────────────────────┐
-   │ CLOUD SCHEDULER — cron trigger, jittered, ≥15 min              │
+   │ GITHUB ACTIONS — scheduled workflow, cron-triggered, ≥15 min  │
+   │ .github/workflows/collect.yml, ubuntu-latest runner            │
+   │                                                                │
+   │   collector ── Playwright ── storageState ⇄ Firebase Storage  │
+   │   parser · prefilter · classifier · scorer · Telegram send    │
    └───────────────────────────┬──────────────────────────────────┘
-                               │ invokes
-                               ▼
-   ┌──────────────────────────────────────────────────────────────┐
-   │ CLOUD RUN JOB (ephemeral — one execution per cycle)            │
-   │   collector ── Playwright ── storageState ⇄ Cloud Storage      │
-   │   parser · prefilter · classifier · scorer · Telegram send     │
-   └───────────────────────────┬──────────────────────────────────┘
-                               │ Firestore SDK (service account)
+                               │ Firestore SDK (service account,
+                               │ via GitHub Actions encrypted secret)
                                ▼
    ┌──────────────────────────────────────────────────────────────┐
    │ FIRESTORE   jobs · classifications · outbox · state · stats  │
+   │ (Firebase Spark plan — free)                                  │
    └──────────────────────────────────────────────────────────────┘
                                │
                                ▼
@@ -44,31 +49,33 @@ with no natural place to end a Playwright session cleanly):
                   (direct call — no public webhook needed for v1)
 ```
 
-What this costs, honestly, versus an always-on box:
+What this costs, honestly, versus both earlier options:
 
-- **A Google datacenter egress IP instead of a residential one.** This is a
-  real regression on "least anomalous traffic," not a wash. Mitigations: a
-  longer poll interval (15 min default, never under 5), and optionally a
-  **static IP via Cloud NAT** on the Job's VPC connector, so at least the
-  *same* IP returns every cycle instead of a fresh one each time — that's
-  consistency, not evasion. If TanitJobs starts challenging after this
-  change, that's the signal to slow down further or ask for feed access —
-  same as always, never a signal to add stealth.
-- **No persistent disk.** Playwright `storageState` (cookies + localStorage —
-  not a full profile directory) is written to a small Cloud Storage object at
-  the end of each run and reloaded at the start of the next. Functionally
-  similar continuity to a persistent profile; mechanically different because
-  there's no disk to leave it on.
-- **Cold start on every cycle.** A ~1 GB container booting per run isn't free,
-  but Cloud Run Jobs bill per second of actual execution — a run that does 3
-  requests and exits is seconds, not minutes. Expect a cost in the same range
-  as the $5 VPS this replaces. The win is zero maintenance, not a lower bill.
+- **A well-known, publicly-documented CI-runner egress IP.** This is arguably
+  worse for WAF risk than the Cloud Run revision's Google datacenter IP —
+  GitHub Actions IP ranges are extensively fingerprinted precisely because
+  they're such a common scraping/bot source. No mitigation exists for this
+  short of a self-hosted runner, which reintroduces the always-on box this
+  whole design avoids. The response if TanitJobs starts challenging stays
+  the same as ever: slow down, or ask for feed access — never stealth.
+- **No persistent disk, same as Cloud Run Jobs.** Each workflow run is a
+  fresh VM. Playwright `storageState` (cookies + localStorage, not a full
+  profile directory) round-trips through a small object in **Firebase
+  Storage** — Spark-plan free, and reachable with the same service account
+  already used for Firestore.
+- **Best-effort scheduling.** GitHub's `schedule: cron` trigger is
+  documented as best-effort and can slip by several minutes during platform
+  load, especially for public repos. Treat that slack as free jitter on top
+  of the jitter already built into the collector, not a bug to fight.
+- **Genuinely $0, not "should stay near $0."** Actions minutes are free on a
+  public repo with no metered edge the way Blaze's pay-as-you-go billing has
+  one — nothing to accidentally exceed.
 
 Telegram delivery (§4) needs no public HTTPS endpoint, unlike the WhatsApp
-webhook the previous revision of this design required — so there is, for now,
-no Cloud Function or Cloud Run Service in this picture at all. If one becomes
-necessary later (inbound Telegram commands), it is small, separate, and never
-folded into the collector Job.
+webhook an earlier revision of this design required — so there is no
+publicly-reachable service anywhere in this picture. If one becomes necessary
+later (inbound Telegram commands), it is small, separate, and never folded
+into the scheduled workflow.
 
 ---
 
@@ -230,7 +237,7 @@ outbox/{jobId}
   senders; Telegram does nothing equivalent to a personal bot at this volume.
   The cap exists so a scoring regression can't page you forty times in a row.
 - **No public webhook for v1.** Outbound-only delivery needs nothing publicly
-  reachable — the Cloud Run Job calls the Bot API directly. A webhook (or
+  reachable — the GitHub Actions workflow run calls the Bot API directly. A webhook (or
   long-polling) only becomes necessary for inbound commands (`/mute company`,
   "mark applied" buttons) — deliberately deferred, see §6.
 

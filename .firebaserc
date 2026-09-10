@@ -1,0 +1,6 @@
+{
+  "projects": {
+    "default": "demo-tanitjobs-bot",
+    "production": "tanitjobs-bot"
+  }
+}

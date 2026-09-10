@@ -1,0 +1,12 @@
+rules_version = '2';
+
+// Nothing but the collector's Admin SDK ever touches this database — there is
+// no client app. Admin SDK access bypasses these rules entirely; they exist
+// only as a hard "no" for anything that isn't the service account.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
