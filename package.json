@@ -1,0 +1,24 @@
+{
+  "name": "tanitjobs-bot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Personal job-alert bot for TanitJobs — Firestore + Telegram, run as a scheduled Cloud Run Job.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc",
+    "probe": "npm run build && node dist/browser/probe.js",
+    "once": "npm run build && node dist/once.js",
+    "collect": "npm run build && node dist/collect.js",
+    "emulate": "node -e \"console.log('Firebase emulator not configured yet — see TKT-003.'); process.exit(0)\"",
+    "deploy:job": "node -e \"console.log('Cloud Run Job deploy pipeline not configured yet — see TKT-006 / TKT-031.'); process.exit(0)\"",
+    "tg:check": "node -e \"console.log('Telegram bot not configured yet — see TKT-004.'); process.exit(0)\"",
+    "test": "npm run build && node --test dist"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "typescript": "^5.5.4"
+  }
+}
