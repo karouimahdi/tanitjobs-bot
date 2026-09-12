@@ -1,0 +1,73 @@
+name: Collect
+
+# The collector's only home. There is no Cloud Run Job / Cloud Scheduler pair
+# (see architecture.md §1 for why that plan didn't work out) — this workflow
+# *is* the schedule, and `git push` *is* the deploy step. Nothing here stays
+# running between executions: each run is a fresh ubuntu-latest VM that boots,
+# does one cycle, and exits, exactly like a Cloud Run Job would have.
+
+on:
+  schedule:
+    # Every 15 minutes, never faster (CLAUDE.md "Collector rules"). GitHub's
+    # cron scheduler is best-effort and slips under load — that slack is free
+    # jitter on top of the 15-minute floor, not a bug to work around.
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+
+# One cycle at a time. Firestore writes are idempotent (create()-based
+# dedup), but there's no reason to let two cycles race against the same
+# watermark doc if a run ever takes longer than the schedule interval.
+concurrency:
+  group: collector
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # Chromium download is the expensive part of a cold run (~300MB) and
+      # this workflow fires every 15 minutes — cache it by lockfile hash so
+      # most runs only reinstall the OS-level deps, which aren't cacheable
+      # since the VM itself is thrown away after every run.
+      - name: Cache Playwright Chromium
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Playwright Chromium + system deps
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Install Playwright system deps only (browser cache hit)
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+
+      - name: Write Firebase service account key
+        run: echo "$FIREBASE_SERVICE_ACCOUNT_KEY" > "$RUNNER_TEMP/firebase-adminsdk.json"
+        env:
+          FIREBASE_SERVICE_ACCOUNT_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
+
+      - name: Run one collection cycle
+        run: npm run once
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-adminsdk.json
+          GCLOUD_PROJECT: tanitjobs-bot
+          FIREBASE_STORAGE_BUCKET: ${{ vars.FIREBASE_STORAGE_BUCKET }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}

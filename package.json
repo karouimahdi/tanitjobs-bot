@@ -2,7 +2,7 @@
   "name": "tanitjobs-bot",
   "version": "0.1.0",
   "private": true,
-  "description": "Personal job-alert bot for TanitJobs — Firestore + Telegram, run as a scheduled Cloud Run Job.",
+  "description": "Personal job-alert bot for TanitJobs — Firestore + Telegram, run as a scheduled GitHub Actions workflow.",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -14,12 +14,13 @@
     "collect": "npm run build && node dist/collect.js",
     "emulate": "firebase emulators:start --only firestore",
     "verify:emulator": "npm run build && firebase emulators:exec --only firestore \"node dist/db/emulator-check.js\"",
-    "deploy:job": "node -e \"console.log('Cloud Run Job deploy pipeline not configured yet — see TKT-006 / TKT-031.'); process.exit(0)\"",
-    "tg:check": "node -e \"console.log('Telegram bot not configured yet — see TKT-004.'); process.exit(0)\"",
+    "deploy:job": "node -e \"console.log('No separate deploy step — deployment is git push. .github/workflows/collect.yml is the schedule; set repo secrets ANTHROPIC_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, FIREBASE_SERVICE_ACCOUNT_KEY.'); process.exit(0)\"",
+    "tg:check": "npm run build && node --env-file=.env dist/notify/tg-check.js",
     "test": "npm run build && node --test dist"
   },
   "dependencies": {
-    "firebase-admin": "^12.3.1"
+    "firebase-admin": "^12.3.1",
+    "playwright": "^1.63.0"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",

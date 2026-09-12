@@ -102,11 +102,26 @@ npm run probe                    # ← do this before touching any selector
 npm run once                     # one full cycle, verbose, against the emulator
 ```
 
-Going to production means committing `.github/workflows/collect.yml` and
-setting the repo secrets (Anthropic key, Telegram token, Firebase service
-account) — deployment *is* `git push`, there's no separate deploy step and
-no `npm start`-forever command. See `architecture.md` §1 for the full
-reasoning, including why Cloud Run Jobs didn't work out.
+Going to production means committing `.github/workflows/collect.yml` (already
+in the repo) and setting these repo secrets under *Settings → Secrets and
+variables → Actions*:
+
+- `ANTHROPIC_API_KEY`
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_CHAT_ID`
+- `FIREBASE_SERVICE_ACCOUNT_KEY` — the full JSON contents of the service
+  account key (the same key used locally at `secrets/firebase-adminsdk.json`,
+  never committed)
+
+And one repo **variable** (not a secret — it's just a bucket name) under
+*Settings → Secrets and variables → Actions → Variables*:
+
+- `FIREBASE_STORAGE_BUCKET` — exact name from the Firebase console's Storage
+  tab; don't guess `.appspot.com` vs `.firebasestorage.app`.
+
+Deployment *is* `git push`, there's no separate deploy step and no
+`npm start`-forever command. See `architecture.md` §1 for the full reasoning,
+including why Cloud Run Jobs didn't work out.
 
 ### The probe step is not optional
 
