@@ -58,6 +58,15 @@ What this costs, honestly, versus both earlier options:
   short of a self-hosted runner, which reintroduces the always-on box this
   whole design avoids. The response if TanitJobs starts challenging stays
   the same as ever: slow down, or ask for feed access — never stealth.
+
+  **This is also why TKT-014 ("static egress IP via Cloud NAT") is closed as
+  obsolete, not deferred.** It was written against the Cloud Run Job
+  revision, where a VPC connector was at least reachable. A VPC connector
+  and Cloud NAT are themselves GCP Blaze-exclusive — the identical hard
+  billing gate documented above that this pivot exists to avoid — and a
+  GitHub Actions runner can't attach to one regardless, since it isn't GCP
+  compute. There's no version of this ticket that fits the current topology;
+  it isn't a matter of waiting for challenge evidence to justify it.
 - **No persistent disk, same as Cloud Run Jobs.** Each workflow run is a
   fresh VM. Playwright `storageState` (cookies + localStorage, not a full
   profile directory) round-trips through a small object in **Firebase
