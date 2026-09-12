@@ -1,0 +1,54 @@
+name: Probe (diagnostic)
+
+# Manual-only connectivity/selector check against the live site — never
+# scheduled, so it can't add to the site's polling cadence on top of
+# collect.yml's own ≥15-minute cycle (CLAUDE.md "Collector rules"). Exists
+# so `npm run probe`'s output (raw/probe.html, raw/probe.png, the console
+# report) can be inspected without needing shell access on the runner —
+# useful any time selectors need re-checking, not just for this one test.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Cache Playwright Chromium
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Playwright Chromium + system deps
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Install Playwright system deps only (browser cache hit)
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+
+      - name: Run probe
+        run: npm run probe
+
+      - name: Upload raw/ as an artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: probe-output
+          path: raw/
+          retention-days: 3
